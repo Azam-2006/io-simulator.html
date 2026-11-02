@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interrupt-Driven I/O Model | Experiment 19</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #0a0d12;
+            --bg-card: #111620;
+            --bg-card-subtle: #171f2c;
+            --border: #1f2a3a;
+            --border-highlight: #2a3a50;
+            --accent: #a3e635;
+            --accent-dim: rgba(163, 230, 53, 0.15);
+            --accent-glow: rgba(163, 230, 53, 0.35);
+            --text-main: #f1f5f9;
+            --text-muted: #8b9bb4;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --blue: #38bdf8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: 
+                radial-gradient(ellipse at 80% 0%, rgba(163, 230, 53, 0.04) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 100%, rgba(56, 189, 248, 0.03) 0%, transparent 60%);
+        }
+
+        header {
+            padding: 20px 36px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(10, 13, 18, 0.85);
+            backdrop-filter: blur(8px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .tag-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            background: var(--accent-dim);
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+
+        .tag-pill::before {
+            content: "";
+            width: 6px;
+            height: 6px;
+            background: var(--accent);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        .header-title-sub {
+            font-size: 12px;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .main-wrapper {
+            padding: 28px 36px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .hero-banner {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 20px;
+        }
+
+        .hero-content h1 {
+            font-size: 38px;
+            font-weight: 700;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+            margin-bottom: 6px;
+        }
+
+        .hero-content h1 span {
+            color: var(--accent);
+        }
+
+        .hero-content p {
+            color: var(--text-muted);
+            font-size: 15px;
+            max-width: 720px;
+        }
+
+        .hero-stats {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 14px 20px;
+            border-radius: 12px;
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+
+        .hero-stats .badge {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+        }
+
+        .hero-stats .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent);
+            line-height: 1.1;
+            margin-top: 4px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr 340px;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card-header {
+            padding: 12px 18px;
+            background: var(--bg-card-subtle);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title span.badge-num {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            color: var(--accent);
+        }
+
+        .card-body {
+            padding: 18px;
+        }
+
+        .btn {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+        }
+
+        .btn-trigger {
+            background: var(--danger);
+            color: #000;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .btn-trigger:hover {
+            box-shadow: 0 0 16px rgba(248, 113, 113, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+            font-weight: 700;
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 0 14px var(--accent-glow);
+        }
+
+        .btn-secondary {
+            background: var(--bg-card-subtle);
+            border-color: var(--border-highlight);
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        /* Bus & Component Visualizer */
+        .bus-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 16px;
+            background: #080b10;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 18px;
+            position: relative;
+        }
+
+        .bus-line {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .bus-line.active {
+            border-color: var(--accent);
+            background: var(--accent-dim);
+            color: var(--accent);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .bus-line.active-danger {
+            border-color: var(--danger);
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--danger);
+            box-shadow: 0 0 12px rgba(248, 113, 113, 0.35);
+        }
+
+        .timeline-steps {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        .timeline-steps li {
+            padding: 8px 12px;
+            border-radius: 6px;
+            background: var(--bg-base);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            transition: all 0.2s;
+        }
+
+        .timeline-steps li.current-step {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            font-weight: 700;
+        }
+
+        .register-tile {
+            background: var(--bg-base);
+            border: 1px solid var(--border);
+            padding: 10px 14px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 8px;
+        }
+
+        .register-tile.highlight {
+            border-color: var(--accent);
+            background: var(--accent-dim);
+        }
+
+        .terminal-box {
+            background: #050709;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            margin-top: 14px;
+        }
+
+        .terminal-header {
+            font-size: 10px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .terminal-header::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            background: #22c55e;
+            border-radius: 50%;
+        }
+
+        .terminal-output {
+            color: #4ade80;
+            font-size: 12px;
+            line-height: 1.5;
+            min-height: 80px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-left">
+            <div class="tag-pill">Experiment 19</div>
+            <div class="header-title-sub">I/O Operations & Interrupt-Driven Architecture</div>
+        </div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent);">
+            VECTORED INTERRUPT MODEL (RV32I)
+        </div>
+    </header>
+
+    <div class="main-wrapper">
+        <div class="hero-banner">
+            <div class="hero-content">
+                <h1>Interrupt-Driven I/O.<br><span>Zero polling overhead.</span></h1>
+                <p>Simulate hardware asynchronous interrupts: observe the CPU execute user tasks, halt on INTR, push PC to the stack, execute the Interrupt Service Routine (ISR), and execute IRET without CPU polling loops.</p>
+            </div>
+            <div class="hero-stats">
+                <span class="badge">CPU Operating Mode</span>
+                <span class="stat-value" id="cpu-mode-badge">USER_TASK</span>
+                <span class="stat-label" id="cpu-mode-sub">Main Loop Computing</span>
+            </div>
+        </div>
+
+        <div class="grid-layout">
+            <!-- Left Panel: Controls & Signals -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="badge-num">01</span> Interrupt Source</div>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-trigger" id="btn-irq" onclick="triggerHardwareInterrupt()">
+                        Trigger I/O Interrupt (INTR)
+                    </button>
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+                        <button class="btn btn-primary" onclick="stepClock()">Clock Step</button>
+                        <button class="btn btn-secondary" id="btn-run" onclick="toggleClock()">Auto Clock</button>
+                    </div>
+
+                    <button class="btn btn-secondary" onclick="resetSystem()">Reset System</button>
+
+                    <div class="terminal-box">
+                        <div class="terminal-header">Hardware Event Log</div>
+                        <div class="terminal-output" id="log-out">> System Boot: Ready.
+> CPU executing Main Program Loop.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Panel: Bus & State Transitions -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="badge-num">02</span> System Bus & Signal Lines</div>
+                    <span style="font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent);">Tri-State Bus</span>
+                </div>
+                <div class="card-body">
+                    <div class="bus-container">
+                        <div class="bus-line" id="bus-intr">
+                            <span>INTR (Interrupt Request Line)</span>
+                            <span id="intr-status" style="font-weight: 700;">LOW (0)</span>
+                        </div>
+                        <div class="bus-line" id="bus-inta">
+                            <span>INTA (Interrupt Acknowledge Line)</span>
+                            <span id="inta-status" style="font-weight: 700;">HIGH (1 - Inactive)</span>
+                        </div>
+                        <div class="bus-line" id="bus-data">
+                            <span>DATA BUS (Vector / Payload)</span>
+                            <span id="data-status" style="font-weight: 700;">FLOATING (High-Z)</span>
+                        </div>
+                    </div>
+
+                    <div class="card-title" style="margin-bottom: 10px;">
+                        <span class="badge-num">Sequence</span> Interrupt Handling Phases
+                    </div>
+                    <ul class="timeline-steps" id="seq-list">
+                        <li id="seq-0" class="current-step">1. Normal Execution: Main Loop Program</li>
+                        <li id="seq-1">2. Asynchronous IRQ: Peripheral sets INTR line High</li>
+                        <li id="seq-2">3. CPU Acknowledge: Current instruction finishes, INTA pulsed</li>
+                        <li id="seq-3">4. Context Save: Push Program Counter (PC) & state to Stack</li>
+                        <li id="seq-4">5. Vector Branch: Load ISR address (0x0400) into PC</li>
+                        <li id="seq-5">6. Data Transfer: Read byte from I/O Device Buffer</li>
+                        <li id="seq-6">7. Return from Interrupt (IRET): Pop PC, resume Main Loop</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Right Panel: CPU Registers & Memory Map -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title"><span class="badge-num">03</span> CPU Registers & Stack</div>
+                    <span style="font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">Internal State</span>
+                </div>
+                <div class="card-body">
+                    <div class="register-tile" id="tile-pc">
+                        <div>
+                            <div style="font-weight: 700;">Program Counter (PC)</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">Current instruction pointer</div>
+                        </div>
+                        <div id="reg-pc" style="color: var(--accent); font-weight: 700;">0x00000100</div>
+                    </div>
+
+                    <div class="register-tile" id="tile-sp">
+                        <div>
+                            <div style="font-weight: 700;">Stack Pointer (SP)</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">Hardware Stack (x2)</div>
+                        </div>
+                        <div id="reg-sp" style="color: var(--blue); font-weight: 700;">0x7FFFFFF0</div>
+                    </div>
+
+                    <div class="register-tile" id="tile-saved-pc">
+                        <div>
+                            <div style="font-weight: 700;">Saved PC on Stack</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">[SP + 0] Return Address</div>
+                        </div>
+                        <div id="reg-saved-pc" style="color: var(--warning); font-weight: 700;">EMPTY</div>
+                    </div>
+
+                    <div class="register-tile" id="tile-buffer">
+                        <div>
+                            <div style="font-weight: 700;">I/O Data Register (a0)</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">Peripheral Received Byte</div>
+                        </div>
+                        <div id="reg-data" style="color: var(--accent); font-weight: 700;">0x00 (IDLE)</div>
+                    </div>
+
+                    <div class="register-tile" id="tile-intr-count">
+                        <div>
+                            <div style="font-weight: 700;">Serviced Interrupts</div>
+                            <div style="font-size: 10px; color: var(--text-muted);">Total ISR executions</div>
+                        </div>
+                        <div id="reg-count" style="color: var(--text-main); font-weight: 700;">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let phase = 0; // 0: Normal, 1: IRQ asserted, 2: INTA sent, 3: Context Save, 4: ISR Vector Jump, 5: Read Data, 6: IRET
+        let clockRunning = false;
+        let clockInterval = null;
+        let userPC = 0x100;
+        let savedPC = null;
+        let interruptCount = 0;
+
+        function updateUI() {
+            // Update sequence list highlights
+            for (let i = 0; i <= 6; i++) {
+                const el = document.getElementById(`seq-${i}`);
+                if (el) el.className = (i === phase) ? 'current-step' : '';
+            }
+
+            // Update bus lines
+            const busIntr = document.getElementById('bus-intr');
+            const busInta = document.getElementById('bus-inta');
+            const busData = document.getElementById('bus-data');
+
+            busIntr.className = 'bus-line';
+            busInta.className = 'bus-line';
+            busData.className = 'bus-line';
+
+            if (phase === 1) {
+                busIntr.className = 'bus-line active-danger';
+                document.getElementById('intr-status').innerText = 'HIGH (1) [ACTIVE]';
+            } else {
+                document.getElementById('intr-status').innerText = 'LOW (0)';
+            }
+
+            if (phase === 2) {
+                busInta.className = 'bus-line active';
+                document.getElementById('inta-status').innerText = 'LOW (0) [ACK ASSERTED]';
+            } else {
+                document.getElementById('inta-status').innerText = 'HIGH (1 - Inactive)';
+            }
+
+            if (phase === 4 || phase === 5) {
+                busData.className = 'bus-line active';
+                document.getElementById('data-status').innerText = phase === 4 ? 'VECTOR = 0x40 (ISR)' : 'BYTE = 0x5A [KEY "Z"]';
+            } else {
+                document.getElementById('data-status').innerText = 'FLOATING (High-Z)';
+            }
+
+            // Update badges and registers
+            const badge = document.getElementById('cpu-mode-badge');
+            const badgeSub = document.getElementById('cpu-mode-sub');
+
+            if (phase === 0) {
+                badge.innerText = 'USER_TASK';
+                badge.style.color = 'var(--accent)';
+                badgeSub.innerText = 'Main Loop Computing';
+                document.getElementById('reg-pc').innerText = '0x' + userPC.toString(16).padStart(8, '0');
+            } else if (phase >= 4 && phase <= 5) {
+                badge.innerText = 'ISR_ROUTINE';
+                badge.style.color = 'var(--danger)';
+                badgeSub.innerText = 'Handling Peripheral at 0x400';
+            } else {
+                badge.innerText = 'INTERRUPT_SWITCH';
+                badge.style.color = 'var(--warning)';
+                badgeSub.innerText = 'Hardware Context Handshake';
+            }
+
+            document.getElementById('reg-saved-pc').innerText = savedPC ? '0x' + savedPC.toString(16).padStart(8, '0') : 'EMPTY';
+            document.getElementById('reg-count').innerText = interruptCount;
+        }
+
+        function appendLog(msg) {
+            const out = document.getElementById('terminal-out');
+            out.innerText += "\n> " + msg;
+            out.scrollTop = out.scrollHeight;
+        }
+
+        function triggerHardwareInterrupt() {
+            if (phase === 0) {
+                phase = 1;
+                appendLog('KEYBOARD PERIPHERAL: Key pressed! Asserting INTR line HIGH.');
+                updateUI();
+            }
+        }
+
+        function stepClock() {
+            switch(phase) {
+                case 0:
+                    userPC += 4;
+                    if (userPC > 0x120) userPC = 0x100;
+                    appendLog(`CPU executing normal user instruction at 0x${userPC.toString(16).padStart(4, '0')}`);
+                    break;
+                case 1:
+                    phase = 2;
+                    appendLog('CPU completed current instruction cycle. Detected INTR high. Emitting INTA pulse.');
+                    break;
+                case 2:
+                    phase = 3;
+                    savedPC = userPC + 4;
+                    appendLog(`CPU saving state: Pushing return address 0x${savedPC.toString(16).padStart(4, '0')} to Stack.`);
+                    break;
+                case 3:
+                    phase = 4;
+                    document.getElementById('reg-pc').innerText = '0x00000400';
+                    appendLog('Device placed Interrupt Vector 0x40 on Bus. CPU branching to ISR at 0x00000400.');
+                    break;
+                case 4:
+                    phase = 5;
+                    document.getElementById('reg-data').innerText = '0x5A ("Z")';
+                    appendLog('ISR executing: IN byte 0x5A from I/O Port into register a0.');
+                    break;
+                case 5:
+                    phase = 6;
+                    appendLog('ISR finished: Executing IRET instruction. Popping saved PC from stack.');
+                    break;
+                case 6:
+                    userPC = savedPC;
+                    savedPC = null;
+                    interruptCount++;
+                    phase = 0;
+                    appendLog(`Context restored. Seamlessly resumed Main Program at 0x${userPC.toString(16).padStart(4, '0')}.`);
+                    break;
+            }
+            updateUI();
+        }
+
+        function toggleClock() {
+            const btn = document.getElementById('btn-run');
+            if (clockRunning) {
+                clearInterval(clockInterval);
+                clockRunning = false;
+                btn.innerText = 'Auto Clock';
+            } else {
+                clockRunning = true;
+                btn.innerText = 'Pause Clock';
+                clockInterval = setInterval(() => stepClock(), 900);
+            }
+        }
+
+        function resetSystem() {
+            if (clockRunning) toggleClock();
+            phase = 0;
+            userPC = 0x100;
+            savedPC = null;
+            interruptCount = 0;
+            document.getElementById('reg-data').innerText = '0x00 (IDLE)';
+            document.getElementById('terminal-out').innerText = '> System Reset. Ready.';
+            updateUI();
+        }
+
+        updateUI();
+    </script>
+</body>
+</html>
